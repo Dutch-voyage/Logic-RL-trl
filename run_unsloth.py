@@ -9,12 +9,12 @@ os.environ["VLLM_ATTENTION_BACKEND"] = "XFORMERS"
 max_prompt_length = 400
 max_seq_length = 2048 # Can increase for longer reasoning traces
 lora_rank = 64 # Larger rank = smarter, but slower
-model_name = "../../Qwen2.5-0.5B-Instruct/"
+model_name = "../../../models/Qwen2.5-0.5B/"
 assert os.path.isdir(model_name), f"Model {model_name} does not exist"
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name = model_name,
     max_seq_length = max_seq_length,
-    load_in_4bit = False, # False for LoRA 16bit
+    load_in_4bit = True, # False for LoRA 16bit
     fast_inference = True, # Enable vLLM fast inference
     max_lora_rank = lora_rank,
     gpu_memory_utilization = 0.6, # Reduce if out of memory
@@ -59,7 +59,8 @@ training_args = GRPOConfig(
     output_dir = "outputs",
 )
 
-from dataset_utils import load_dataset
+from .utils.dataset_utils import load_dataset
+from .utils.kk import compute_score
 data_dir = "../Logic-RL/data/kk/instruct/3ppl/"
 
 dataset = load_dataset(data_dir)
