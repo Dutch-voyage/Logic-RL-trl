@@ -2,14 +2,15 @@ from unsloth import FastLanguageModel, PatchFastRL
 from unsloth import is_bfloat16_supported
 import torch
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["VLLM_ATTENTION_BACKEND"] = "XFORMERS"
 
 max_prompt_length = 400
 max_seq_length = 2048 # Can increase for longer reasoning traces
 lora_rank = 64 # Larger rank = smarter, but slower
-model_name = "/home/yyx/RL/Qwen2.5-0.5B-Instruct/"
+model_name = "/data1/yyx/models/Qwen2.5-0.5B/"
+assert os.path.isdir("/data1")
 assert os.path.isdir(model_name), f"Model {model_name} does not exist"
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name = model_name,
@@ -85,7 +86,7 @@ class RewardManager():
             ground_truth = kwargs['ground_truth'][i]
 
             # select rm_score
-            data_source = kwargs['data_source']
+            data_source = kwargs['data_source'][0]
             compute_score_fn = _select_rm_score_fn(data_source)
 
             score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
@@ -99,6 +100,21 @@ class RewardManager():
                 print(sequences_str)
 
         return rewards
+    
+    def logging(self, reward_tensor):
+        reward_metrics = {}
+        reward_metrics["reward/mean"] = torch.mean(reward_tensor).detach().item()
+        # Calculate all_correct ratio (value == 3)
+        all_correct = torch.sum(reward_tensor == 3).float() / reward_tensor.numel()
+        reward_metrics["reward/all_correct_ratio"] = all_correct.detach().item()
+        # Calculate format_error ratio (value == -1)
+        format_error = torch.sum(reward_tensor == -1).float() / reward_tensor.numel()
+        reward_metrics["reward/format_error_ratio"] = format_error.detach().item()
+        # Calculate wrong answer ratio (value == -1)
+        format_error = torch.sum(reward_tensor == -0.5).float() / reward_tensor.numel()
+        reward_metrics["reward/wrong_answer_ratio"] = format_error.detach().item()
+        
+        return reward_metrics
 
 data_dir = "../Logic-RL/data/kk/instruct/3ppl/"
 

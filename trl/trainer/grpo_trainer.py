@@ -660,11 +660,13 @@ class GRPOTrainer(Trainer):
         # Log the metrics
         reward_per_func = rewards_per_func.mean(0)
         for i, reward_func in enumerate(self.reward_funcs):
-            if isinstance(reward_func, nn.Module):  # Module instead of PretrainedModel for compat with compiled models
-                reward_func_name = reward_func.config._name_or_path.split("/")[-1]
-            else:
-                reward_func_name = reward_func.__name__
-            self._metrics[f"rewards/{reward_func_name}"].append(reward_per_func[i].item())
+            # TODO: custome logging
+            # if isinstance(reward_func, nn.Module):  # Module instead of PretrainedModel for compat with compiled models
+            #     reward_func_name = reward_func.config._name_or_path.split("/")[-1]
+            # else:
+            #     reward_func_name = reward_func.__name__
+            # self._metrics[f"rewards/{reward_func_name}"].append(reward_per_func[i].item())
+            self._metrics.update(reward_func.logging(reward_per_func[i]))
 
         self._metrics["reward"].append(rewards.mean().item())
         self._metrics["reward_std"].append(std_grouped_rewards.mean().item())
