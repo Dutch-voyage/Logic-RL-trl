@@ -666,7 +666,7 @@ class GRPOTrainer(Trainer):
             # else:
             #     reward_func_name = reward_func.__name__
             # self._metrics[f"rewards/{reward_func_name}"].append(reward_per_func[i].item())
-            self._metrics.update(reward_func.logging(reward_per_func[i]))
+            reward_func.logging(self._metrics, reward_per_func[i])
 
         self._metrics["reward"].append(rewards.mean().item())
         self._metrics["reward_std"].append(std_grouped_rewards.mean().item())
@@ -716,19 +716,30 @@ class GRPOTrainer(Trainer):
         ref_per_token_logps = inputs["ref_per_token_logps"]
         per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
 
+        ratio = per_token_logps - ref_per_token_logps
+        
         # x - x.detach() allows for preserving gradients from x
         advantages = inputs["advantages"]
         per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
+        
+        per_token_loss = torch.max(per_token_loss * ratio, 
+                                   per_token_loss * torch.clamp(ratio, 0.8, 1.2))
+        
+        self._metrics["pg_loss"].append(per_token_loss.mean().item())
+        self._metrics["pg_loss_std"].append(per_token_loss.std().item())
         per_token_loss = -(per_token_loss - self.beta * per_token_kl)
         loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
 
         # Log the metrics
         completion_length = self.accelerator.gather_for_metrics(completion_mask.sum(1)).float().mean().item()
         self._metrics["completion_length"].append(completion_length)
+        self._metrics["completion_length_max"].append(completion_mask.sum(1).max().item())
+        self._metrics["completion_length_min"].append(completion_mask.sum(1).min().item())
 
         mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
         self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
-
+        print(self._metrics.items())
+        assert False
         return loss
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys: Optional[list[str]] = None):
@@ -736,7 +747,6 @@ class GRPOTrainer(Trainer):
         with torch.no_grad():
             with self.compute_loss_context_manager():
                 loss = self.compute_loss(model, inputs)
-            loss = loss.mean().detach()
         return loss, None, None
 
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
