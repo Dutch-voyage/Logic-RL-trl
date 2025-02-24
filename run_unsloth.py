@@ -9,7 +9,7 @@ os.environ["VLLM_ATTENTION_BACKEND"] = "XFORMERS"
 max_prompt_length = 400
 max_seq_length = 2048 # Can increase for longer reasoning traces
 lora_rank = 64 # Larger rank = smarter, but slower
-model_name = "../../../models/Qwen2.5-0.5B/"
+model_name = "/home/yyx/RL/Qwen2.5-0.5B-Instruct/"
 assert os.path.isdir(model_name), f"Model {model_name} does not exist"
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name = model_name,
@@ -33,9 +33,9 @@ model = FastLanguageModel.get_peft_model(
 )
 
 
-from .trl import GRPOConfig, GRPOTrainer
+from trl.trainer import GRPOConfig, GRPOTrainer
 training_args = GRPOConfig(
-    use_vllm = True, # use vLLM for fast inference!
+    use_vllm = False, # use vLLM for fast inference!
     learning_rate = 5e-6,
     adam_beta1 = 0.9,
     adam_beta2 = 0.99,
@@ -59,17 +59,58 @@ training_args = GRPOConfig(
     output_dir = "outputs",
 )
 
-from .utils.dataset_utils import load_dataset
-from .utils.kk import compute_score
+from utils.dataset_utils import custom_load_dataset
+from utils.kk import compute_score
+
+
+def _select_rm_score_fn(data_source):
+    return compute_score
+
+class RewardManager():
+    """The reward manager.
+    """
+
+    def __init__(self, num_examine) -> None:
+        self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
+
+    def __call__(self, prompts, completions, **kwargs):
+        """We will expand this function gradually based on the available datasets"""
+
+        rewards = []
+        already_print_data_sources = {}
+
+        for i in range(len(completions)):
+            sequences_str = completions[i][0]['content']
+
+            ground_truth = kwargs['ground_truth'][i]
+
+            # select rm_score
+            data_source = kwargs['data_source']
+            compute_score_fn = _select_rm_score_fn(data_source)
+
+            score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
+            rewards.append(score)
+
+            if data_source not in already_print_data_sources:
+                already_print_data_sources[data_source] = 0
+
+            if already_print_data_sources[data_source] < self.num_examine:
+                already_print_data_sources[data_source] += 1
+                print(sequences_str)
+
+        return rewards
+
 data_dir = "../Logic-RL/data/kk/instruct/3ppl/"
 
-dataset = load_dataset(data_dir)
+dataset = custom_load_dataset(data_dir)
+
+reward_manager = RewardManager(num_examine=1)
 
 trainer = GRPOTrainer(
     model = model,
     processing_class = tokenizer,
-    reward_funcs = [
-        compute_score,
+    reward_funcs = [    
+        reward_manager,
     ],
     args = training_args,
     train_dataset = dataset['train'],

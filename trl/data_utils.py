@@ -107,7 +107,7 @@ def apply_chat_template(
             tokenize=False,
             add_generation_prompt=add_generation_prompt,
         )
-
+    
     # Apply the chat template to the entire prompt + completion
     if "prompt" in example:  # explicit prompt and prompt-completion case
         if "chosen" in example:
